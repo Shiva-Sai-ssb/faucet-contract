@@ -35,7 +35,27 @@ function handleHealth(req, res) {
   });
 }
 
-function handleNetworks(req, res) {}
+// Networks Info Handler
+export function handleNetworks(req, res) {
+  const networksInfo = {};
+
+  Object.entries(clients).forEach(([chainId, client]) => {
+    const tracker = networkClaimTracker[chainId];
+    const now = Date.now();
+    const recentClaims = tracker.claims.filter(
+      (t) => now - t < tracker.windowMs
+    ).length;
+
+    networksInfo[chainId] = {
+      name: client.name,
+      faucetAddress: client.faucetAddress,
+      claimsThisHour: recentClaims,
+      remainingClaims: tracker.maxClaims - recentClaims,
+    };
+  });
+
+  res.json({ networks: networksInfo });
+}
 
 function handleCanClaim(req, res) {}
 
