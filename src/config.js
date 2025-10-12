@@ -4,7 +4,36 @@ import { createPublicClient, createWalletClient, http } from "viem";
 import { sepolia, arbitrumSepolia, optimismSepolia } from "viem/chains";
 
 // Faucet ABI
-const FAUCET_ABI = [];
+const FAUCET_ABI = [
+  {
+    inputs: [
+      {
+        internalType: "address",
+        name: "user",
+        type: "address",
+      },
+      {
+        internalType: "uint256",
+        name: "nonce",
+        type: "uint256",
+      },
+      {
+        internalType: "uint256",
+        name: "deadline",
+        type: "uint256",
+      },
+      {
+        internalType: "bytes",
+        name: "signature",
+        type: "bytes",
+      },
+    ],
+    name: "drip",
+    outputs: [],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+];
 
 // Network Configuration
 const NETWORKS = {
