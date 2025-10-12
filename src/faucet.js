@@ -1,4 +1,10 @@
-import { encodeFunctionData, isAddress } from "viem";
+import {
+  encodePacked,
+  encodeFunctionData,
+  isAddress,
+  keccak256,
+  recoverMessageAddress,
+} from "viem";
 import {
   FAUCET_ABI,
   clients,
@@ -149,6 +155,39 @@ async function handleFaucet(req, res) {
       clients[chainId];
 
     console.log("Faucet Address:", faucetAddress);
+
+    // Signature Verification
+    const hash = keccak256(
+      encodePacked(
+        ["address", "uint256", "uint256", "uint256", "address"],
+        [user, BigInt(nonce), BigInt(deadline), BigInt(chainId), faucetAddress]
+      )
+    );
+
+    console.log("Computed Hash:", hash);
+    console.log("Received Signature:", signature);
+
+    let recovered;
+    try {
+      recovered = await recoverMessageAddress({
+        message: { raw: hash },
+        signature,
+      });
+    } catch (err) {
+      console.error("Signature recovery error:", err);
+      return res.status(400).json({
+        error: "Invalid signature format",
+        details: err.message,
+      });
+    }
+
+    console.log("Recovered Address:", recovered);
+    console.log("Expected Address:", user);
+    console.log("Match:", recovered.toLowerCase() === user.toLowerCase());
+
+    if (recovered.toLowerCase() !== user.toLowerCase()) {
+      return res.status(400).json({ error: "Invalid signature" });
+    }
 
     // Encode Transaction Data
     const data = encodeFunctionData({
