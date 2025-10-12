@@ -1,8 +1,10 @@
+import { encodeFunctionData } from "viem";
 import {
+  FAUCET_ABI,
   clients,
   account,
-  networkClaimTracker,
   userCooldowns,
+  networkClaimTracker,
 } from "./config.js";
 
 // Rate Limiting Check
@@ -41,7 +43,7 @@ function handleHealth(req, res) {
 }
 
 // Networks Info Handler
-export function handleNetworks(req, res) {
+function handleNetworks(req, res) {
   const networksInfo = {};
 
   Object.entries(clients).forEach(([chainId, client]) => {
@@ -63,7 +65,7 @@ export function handleNetworks(req, res) {
 }
 
 // Can Claim Check Handler
-export function handleCanClaim(req, res) {
+function handleCanClaim(req, res) {
   try {
     const { chainId, user } = req.body;
 
@@ -99,6 +101,86 @@ export function handleCanClaim(req, res) {
   }
 }
 
-function handleFaucet(req, res) {}
+// Main Faucet Handler
+async function handleFaucet(req, res) {
+  try {
+    const { user, nonce, deadline, signature, chainId } = req.body;
+
+    console.log("User:", user);
+    console.log("Nonce:", nonce);
+    console.log("Deadline:", deadline);
+    console.log("Signature: ", signature);
+    console.log("ChainId:", chainId);
+
+    const { publicClient, walletClient, faucetAddress, name } =
+      clients[chainId];
+
+    console.log("Faucet Address:", faucetAddress);
+
+    // Encode Transaction Data
+    const data = encodeFunctionData({
+      abi: FAUCET_ABI,
+      functionName: "drip",
+      args: [user, BigInt(nonce), BigInt(deadline), signature],
+    });
+
+    console.log("Encoded Data: ", data);
+
+    // Gas Estimation
+    let gas;
+    try {
+      const estimatedGas = await publicClient.estimateGas({
+        account: account.address,
+        to: faucetAddress,
+        data,
+      });
+
+      gas = BigInt(Math.floor(Number(estimatedGas) * 1.2));
+    } catch (err) {
+      networkClaimTracker[chainId].claims.pop();
+
+      return res.status(400).json({
+        error: "Transaction would fail",
+        details: err.message || String(err),
+      });
+    }
+
+    console.log("Estimated Gas: ", gas);
+
+    // Send Transaction
+    let txHash;
+    try {
+      txHash = await walletClient.sendTransaction({
+        to: faucetAddress,
+        data,
+        gas,
+      });
+    } catch (err) {
+      networkClaimTracker[chainId].claims.pop();
+
+      return res.status(500).json({
+        error: "Transaction failed",
+        details: err.message || String(err),
+      });
+    }
+
+    console.log(
+      `Drip Successful!\nNetwork: ${name} (Chain ID: ${chainId})\nRecipient: ${user}\nTransaction Hash: ${txHash}`
+    );
+
+    res.json({
+      success: true,
+      txHash,
+      chainId,
+      network: name,
+      faucetAddress,
+      user,
+      nextClaimTime: new Date(now + 24 * 60 * 60 * 1000).toISOString(),
+      networkRateLimitRemaining: rateLimitCheck.remaining,
+    });
+  } catch (err) {
+    console.log("Error: ", err);
+  }
+}
 
 export { handleHealth, handleNetworks, handleCanClaim, handleFaucet };
