@@ -267,7 +267,11 @@ async function handleFaucet(req, res) {
       networkRateLimitRemaining: rateLimitCheck.remaining,
     });
   } catch (err) {
-    console.log("Error: ", err);
+    console.error("Relayer error:", err);
+    res.status(500).json({
+      error: "Internal server error",
+      details: err.message || String(err),
+    });
   }
 }
 
