@@ -1,4 +1,26 @@
-import { clients, account } from "./config.js";
+import { clients, account, networkClaimTracker } from "./config.js";
+
+// Rate Limiting Check
+function checkNetworkRateLimit(chainId) {
+  const tracker = networkClaimTracker[chainId];
+  const now = Date.now();
+  tracker.claims = tracker.claims.filter((ts) => now - ts < tracker.windowMs);
+
+  if (tracker.claims.length >= tracker.maxClaims) {
+    const oldestClaim = Math.min(...tracker.claims);
+    return {
+      allowed: false,
+      resetTime: new Date(oldestClaim + tracker.windowMs),
+      remaining: 0,
+    };
+  }
+
+  tracker.claims.push(now);
+  return {
+    allowed: true,
+    remaining: tracker.maxClaims - tracker.claims.length,
+  };
+}
 
 // Health Check Handler
 function handleHealth(req, res) {
