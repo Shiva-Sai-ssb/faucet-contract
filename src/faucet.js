@@ -7,7 +7,7 @@ import {
   networkClaimTracker,
 } from "./config.js";
 
-// Rate Limiting Check
+// Network Rate Limit Check Helper Function
 function checkNetworkRateLimit(chainId) {
   const tracker = networkClaimTracker[chainId];
   const now = Date.now();
@@ -125,6 +125,25 @@ async function handleFaucet(req, res) {
 
     if (!isAddress(user))
       return res.status(400).json({ error: "Invalid user address" });
+
+    // Deadline Validation
+    const deadlineTimestamp = BigInt(deadline);
+    const currentTimestamp = BigInt(Math.floor(Date.now() / 1000));
+
+    if (currentTimestamp > deadlineTimestamp)
+      return res
+        .status(400)
+        .json({ error: "Sorry, the deadline has expired. Please try again." });
+
+    // Network Rate Limit Check
+    const rateLimitCheck = checkNetworkRateLimit(chainId);
+
+    if (!rateLimitCheck.allowed)
+      return res.status(429).json({
+        error: "Network rate limit reached",
+        resetTime: rateLimitCheck.resetTime.toISOString(),
+        remaining: rateLimitCheck.remaining,
+      });
 
     const { publicClient, walletClient, faucetAddress, name } =
       clients[chainId];
