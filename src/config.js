@@ -3,7 +3,7 @@ import { privateKeyToAccount } from "viem/accounts";
 import { createPublicClient, createWalletClient, http } from "viem";
 import { sepolia, arbitrumSepolia, optimismSepolia } from "viem/chains";
 
-// Faucet ABI
+// Minimal Faucet ABI
 const FAUCET_ABI = [
   {
     inputs: [
@@ -122,7 +122,6 @@ function canUserClaim(chainId, user, now = Date.now()) {
   const entry = userCooldowns[chainId].get(user.toLowerCase());
   if (!entry) return true;
 
-  // Lazy cleanup - if expired, remove and allow claim
   if (now >= entry.expiresAt) {
     userCooldowns[chainId].delete(user.toLowerCase());
     return true;
@@ -175,7 +174,6 @@ function checkAndAddNetworkClaim(chainId) {
   }
 }
 
-// Rollback network claim (if transaction fails after rate limit check)
 function rollbackNetworkClaim(chainId) {
   const tracker = networkClaimTracker[chainId];
   if (tracker.claims.length > 0) {
