@@ -110,22 +110,78 @@ Object.keys(clients).forEach((chainId) => {
   userCooldowns[chainId] = new Map();
 });
 
-// Cleanup expired entries every hour
-setInterval(() => {
-  const oneDayAgo = Date.now() - 24 * 60 * 60 * 1000;
-
-  Object.values(userCooldowns).forEach((map) => {
-    for (const [addr, ts] of map.entries()) {
-      if (ts < oneDayAgo) map.delete(addr);
-    }
+// User cooldown helper functions
+function setUserCooldown(chainId, user, now = Date.now()) {
+  userCooldowns[chainId].set(user.toLowerCase(), {
+    lastClaim: now,
+    expiresAt: now + 24 * 60 * 60 * 1000,
   });
+}
 
-  Object.values(networkClaimTracker).forEach((tracker) => {
-    tracker.claims = tracker.claims.filter(
-      (ts) => Date.now() - ts < tracker.windowMs
-    );
-  });
-}, 60 * 60 * 1000);
+function canUserClaim(chainId, user, now = Date.now()) {
+  const entry = userCooldowns[chainId].get(user.toLowerCase());
+  if (!entry) return true;
+
+  // Lazy cleanup - if expired, remove and allow claim
+  if (now >= entry.expiresAt) {
+    userCooldowns[chainId].delete(user.toLowerCase());
+    return true;
+  }
+
+  return false;
+}
+
+function getUserCooldownInfo(chainId, user) {
+  const entry = userCooldowns[chainId].get(user.toLowerCase());
+  if (!entry) return null;
+
+  const now = Date.now();
+  if (now >= entry.expiresAt) {
+    userCooldowns[chainId].delete(user.toLowerCase());
+    return null;
+  }
+
+  return {
+    lastClaim: entry.lastClaim,
+    expiresAt: entry.expiresAt,
+    remainingSeconds: Math.ceil((entry.expiresAt - now) / 1000),
+  };
+}
+
+// Network rate limit helper
+function checkAndAddNetworkClaim(chainId) {
+  const tracker = networkClaimTracker[chainId];
+  const now = Date.now();
+
+  while (tracker.claims.length && now - tracker.claims[0] >= tracker.windowMs) {
+    tracker.claims.shift();
+  }
+
+  const allowed = tracker.claims.length < tracker.maxClaims;
+
+  if (allowed) {
+    tracker.claims.push(now);
+    return {
+      allowed: true,
+      remaining: tracker.maxClaims - tracker.claims.length,
+      resetTime: null,
+    };
+  } else {
+    return {
+      allowed: false,
+      remaining: 0,
+      resetTime: new Date(tracker.claims[0] + tracker.windowMs),
+    };
+  }
+}
+
+// Rollback network claim (if transaction fails after rate limit check)
+function rollbackNetworkClaim(chainId) {
+  const tracker = networkClaimTracker[chainId];
+  if (tracker.claims.length > 0) {
+    tracker.claims.pop();
+  }
+}
 
 export {
   FAUCET_ABI,
@@ -133,5 +189,9 @@ export {
   networkClaimTracker,
   account,
   clients,
-  userCooldowns,
+  setUserCooldown,
+  canUserClaim,
+  getUserCooldownInfo,
+  checkAndAddNetworkClaim,
+  rollbackNetworkClaim,
 };

@@ -9,31 +9,13 @@ import {
   FAUCET_ABI,
   clients,
   account,
-  userCooldowns,
+  canUserClaim,
+  setUserCooldown,
+  getUserCooldownInfo,
+  checkAndAddNetworkClaim,
+  rollbackNetworkClaim,
   networkClaimTracker,
 } from "./config.js";
-
-// Network Rate Limit Check Helper Function
-function checkNetworkRateLimit(chainId) {
-  const tracker = networkClaimTracker[chainId];
-  const now = Date.now();
-  tracker.claims = tracker.claims.filter((ts) => now - ts < tracker.windowMs);
-
-  if (tracker.claims.length >= tracker.maxClaims) {
-    const oldestClaim = Math.min(...tracker.claims);
-    return {
-      allowed: false,
-      resetTime: new Date(oldestClaim + tracker.windowMs),
-      remaining: 0,
-    };
-  }
-
-  tracker.claims.push(now);
-  return {
-    allowed: true,
-    remaining: tracker.maxClaims - tracker.claims.length,
-  };
-}
 
 // Health Check Handler
 function handleHealth(req, res) {
@@ -55,6 +37,7 @@ function handleNetworks(req, res) {
   Object.entries(clients).forEach(([chainId, client]) => {
     const tracker = networkClaimTracker[chainId];
     const now = Date.now();
+
     const recentClaims = tracker.claims.filter(
       (t) => now - t < tracker.windowMs
     ).length;
@@ -84,19 +67,13 @@ function handleCanClaim(req, res) {
     if (!user || !isAddress(user))
       return res.status(400).json({ error: "Invalid user address" });
 
-    const lastRequest = userCooldowns[chainId].get(user.toLowerCase());
-    const now = Date.now();
-
-    if (lastRequest && now - lastRequest < 24 * 60 * 60 * 1000) {
-      const remaining = Math.ceil(
-        (24 * 60 * 60 * 1000 - (now - lastRequest)) / 1000
-      );
-      const nextClaimTime = new Date(lastRequest + 24 * 60 * 60 * 1000);
-
+    // Check if user can claim (with lazy cleanup)
+    if (!canUserClaim(chainId, user)) {
+      const cooldownInfo = getUserCooldownInfo(chainId, user);
       return res.json({
         canClaim: false,
-        remainingSeconds: remaining,
-        nextClaimTime: nextClaimTime.toISOString(),
+        remainingSeconds: cooldownInfo.remainingSeconds,
+        nextClaimTime: new Date(cooldownInfo.expiresAt).toISOString(),
       });
     }
 
@@ -142,26 +119,24 @@ async function handleFaucet(req, res) {
         .json({ error: "Sorry, the deadline has expired. Please try again." });
 
     // Network Rate Limit Check
-    const rateLimitCheck = checkNetworkRateLimit(chainId);
-
-    if (!rateLimitCheck.allowed)
+    const rateLimitCheck = checkAndAddNetworkClaim(chainId);
+    if (!rateLimitCheck.allowed) {
       return res.status(429).json({
         error: "Network rate limit reached",
         resetTime: rateLimitCheck.resetTime.toISOString(),
         remaining: rateLimitCheck.remaining,
       });
+    }
 
     // User Cooldown Check
-    const lastRequest = userCooldowns[chainId].get(user.toLowerCase());
-    const now = Date.now();
-    if (lastRequest && now - lastRequest < 24 * 60 * 60 * 1000) {
-      networkClaimTracker[chainId].claims.pop();
-      const remaining = Math.ceil(
-        (24 * 60 * 60 * 1000 - (now - lastRequest)) / 1000
-      );
-      return res
-        .status(429)
-        .json({ error: `Cooldown active`, remainingSeconds: remaining });
+    if (!canUserClaim(chainId, user)) {
+      const cooldownInfo = getUserCooldownInfo(chainId, user);
+      rollbackNetworkClaim(chainId);
+      return res.status(429).json({
+        error: "Cooldown active",
+        remainingSeconds: cooldownInfo.remainingSeconds,
+        nextClaimTime: new Date(cooldownInfo.expiresAt).toISOString(),
+      });
     }
 
     const { publicClient, walletClient, faucetAddress, name } =
@@ -187,6 +162,7 @@ async function handleFaucet(req, res) {
         signature,
       });
     } catch (err) {
+      rollbackNetworkClaim(chainId);
       console.error("Signature recovery error:", err);
       return res.status(400).json({
         error: "Invalid signature format",
@@ -199,6 +175,7 @@ async function handleFaucet(req, res) {
     console.log("Match:", recovered.toLowerCase() === user.toLowerCase());
 
     if (recovered.toLowerCase() !== user.toLowerCase()) {
+      rollbackNetworkClaim(chainId);
       return res.status(400).json({ error: "Invalid signature" });
     }
 
@@ -222,7 +199,7 @@ async function handleFaucet(req, res) {
 
       gas = BigInt(Math.floor(Number(estimatedGas) * 1.2));
     } catch (err) {
-      networkClaimTracker[chainId].claims.pop();
+      rollbackNetworkClaim(chainId);
 
       return res.status(400).json({
         error: "Transaction would fail",
@@ -241,7 +218,7 @@ async function handleFaucet(req, res) {
         gas,
       });
     } catch (err) {
-      networkClaimTracker[chainId].claims.pop();
+      rollbackNetworkClaim(chainId);
 
       return res.status(500).json({
         error: "Transaction failed",
@@ -249,8 +226,9 @@ async function handleFaucet(req, res) {
       });
     }
 
-    // Update user cooldown
-    userCooldowns[chainId].set(user.toLowerCase(), now);
+    // Update user cooldown (only after successful transaction)
+    const now = Date.now();
+    setUserCooldown(chainId, user, now);
 
     console.log(
       `Drip Successful!\nNetwork: ${name} (Chain ID: ${chainId})\nRecipient: ${user}\nTransaction Hash: ${txHash}`
