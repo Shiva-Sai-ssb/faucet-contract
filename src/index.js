@@ -9,10 +9,11 @@ import {
 } from "./faucet.js";
 
 const app = express();
+const PORT = 8081;
 
 // Middleware
 app.use(json());
-app.use(cors({ origin: "*" }));
+app.use(cors({ origin: process.env.CORS_ORIGIN || "*" }));
 
 // Routes
 app.get("/health", handleHealth);
@@ -21,12 +22,11 @@ app.post("/can-claim", handleCanClaim);
 app.post("/faucet", handleFaucet);
 
 // Start Server
-const PORT = process.env.PORT || 8081;
 app.listen(PORT, () => {
   console.log(`Multi-Network Faucet listening on port ${PORT}`);
   console.log(`Configured networks:`);
   Object.entries(clients).forEach(([chainId, client]) => {
     console.log(`   - ${client.name} (chainId: ${chainId})`);
   });
-  console.log(`\nRelayer address: ${account.address}\n`);
+  console.log(`\nRelayer address: ${account.address}`);
 });
