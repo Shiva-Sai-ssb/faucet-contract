@@ -1,4 +1,4 @@
-import { encodeFunctionData } from "viem";
+import { encodeFunctionData, isAddress } from "viem";
 import {
   FAUCET_ABI,
   clients,
@@ -111,6 +111,20 @@ async function handleFaucet(req, res) {
     console.log("Deadline:", deadline);
     console.log("Signature: ", signature);
     console.log("ChainId:", chainId);
+
+    // Validation
+    if (!chainId || !clients[chainId])
+      return res
+        .status(400)
+        .json({ error: `Chain ID '${chainId}' not supported` });
+
+    if (!user || nonce === undefined || !deadline)
+      return res.status(400).json({
+        error: "Missing parameters: user, nonce, deadline or signature",
+      });
+
+    if (!isAddress(user))
+      return res.status(400).json({ error: "Invalid user address" });
 
     const { publicClient, walletClient, faucetAddress, name } =
       clients[chainId];
