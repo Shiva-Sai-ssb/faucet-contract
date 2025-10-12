@@ -1,5 +1,6 @@
 import express, { json } from "express";
 import cors from "cors";
+import { clients, account } from "./config.js";
 import {
   handleHealth,
   handleNetworks,
@@ -9,9 +10,9 @@ import {
 
 const app = express();
 
-// Middlewares
+// Middleware
 app.use(json());
-app.use(cors({ origin: process.env.CORS_ORIGIN || "http://localhost:8080" }));
+app.use(cors({ origin: "*" }));
 
 // Routes
 app.get("/health", handleHealth);
@@ -19,7 +20,13 @@ app.get("/networks", handleNetworks);
 app.post("/can-claim", handleCanClaim);
 app.post("/faucet", handleFaucet);
 
+// Start Server
 const PORT = process.env.PORT || 8081;
 app.listen(PORT, () => {
-  console.log(`Server listening on port ${PORT}`);
+  console.log(`Multi-Network Faucet listening on port ${PORT}`);
+  console.log(`Configured networks:`);
+  Object.entries(clients).forEach(([chainId, client]) => {
+    console.log(`   - ${client.name} (chainId: ${chainId})`);
+  });
+  console.log(`\nRelayer address: ${account.address}\n`);
 });
