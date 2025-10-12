@@ -1,14 +1,19 @@
 {
   "name": "faucet-contract",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "Multi-network testnet faucet with contract-based signature verification.",
+  "main": "src/index.js",
   "type": "module",
   "scripts": {
     "start": "node src/index.js",
     "dev": "nodemon src/index.js"
   },
-  "keywords": [],
+  "keywords": [
+    "faucet",
+    "ethereum",
+    "testnet",
+    "relayer"
+  ],
   "author": "Shiva Sai",
   "license": "MIT",
   "packageManager": "pnpm@10.18.2",
