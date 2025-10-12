@@ -75,4 +75,17 @@ if (!Object.keys(clients).length) {
   process.exit(1);
 }
 
-export { FAUCET_ABI, NETWORKS, networkClaimTracker, account, clients };
+// User cooldown store (24 hours)
+const userCooldowns = {};
+Object.keys(clients).forEach((chainId) => {
+  userCooldowns[chainId] = new Map();
+});
+
+export {
+  FAUCET_ABI,
+  NETWORKS,
+  networkClaimTracker,
+  account,
+  clients,
+  userCooldowns,
+};
