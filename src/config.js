@@ -1,5 +1,6 @@
 import "dotenv/config";
 import { privateKeyToAccount } from "viem/accounts";
+import { createPublicClient, createWalletClient, http } from "viem";
 import { sepolia, arbitrumSepolia, optimismSepolia } from "viem/chains";
 
 // Faucet ABI
@@ -28,7 +29,7 @@ const NETWORKS = {
 };
 
 // Rate Limiting Configuration
-export const networkClaimTracker = {};
+const networkClaimTracker = {};
 Object.keys(NETWORKS).forEach((chainId) => {
   networkClaimTracker[chainId] = {
     claims: [],
@@ -46,4 +47,32 @@ if (!RELAYER_PK) {
 
 const account = privateKeyToAccount(RELAYER_PK);
 
-export { FAUCET_ABI, NETWORKS, networkClaimTracker, account };
+// Initialize clients per network
+const clients = {};
+Object.entries(NETWORKS).forEach(([chainId, config]) => {
+  if (config.rpcUrl && config.faucetAddress) {
+    clients[chainId] = {
+      publicClient: createPublicClient({
+        chain: config.chain,
+        transport: http(config.rpcUrl),
+      }),
+      walletClient: createWalletClient({
+        account,
+        chain: config.chain,
+        transport: http(config.rpcUrl),
+      }),
+      faucetAddress: config.faucetAddress,
+      name: config.name,
+    };
+    console.log(`Configured: ${config.name} (chainId: ${chainId})`);
+  }
+});
+
+if (!Object.keys(clients).length) {
+  console.error(
+    "No networks configured. Please set RPC_URL and FAUCET_ADDRESS for at least one network."
+  );
+  process.exit(1);
+}
+
+export { FAUCET_ABI, NETWORKS, networkClaimTracker, account, clients };
