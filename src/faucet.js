@@ -151,6 +151,19 @@ async function handleFaucet(req, res) {
         remaining: rateLimitCheck.remaining,
       });
 
+    // User Cooldown Check
+    const lastRequest = userCooldowns[chainId].get(user.toLowerCase());
+    const now = Date.now();
+    if (lastRequest && now - lastRequest < 24 * 60 * 60 * 1000) {
+      networkClaimTracker[chainId].claims.pop();
+      const remaining = Math.ceil(
+        (24 * 60 * 60 * 1000 - (now - lastRequest)) / 1000
+      );
+      return res
+        .status(429)
+        .json({ error: `Cooldown active`, remainingSeconds: remaining });
+    }
+
     const { publicClient, walletClient, faucetAddress, name } =
       clients[chainId];
 
@@ -235,6 +248,9 @@ async function handleFaucet(req, res) {
         details: err.message || String(err),
       });
     }
+
+    // Update user cooldown
+    userCooldowns[chainId].set(user.toLowerCase(), now);
 
     console.log(
       `Drip Successful!\nNetwork: ${name} (Chain ID: ${chainId})\nRecipient: ${user}\nTransaction Hash: ${txHash}`

@@ -110,6 +110,23 @@ Object.keys(clients).forEach((chainId) => {
   userCooldowns[chainId] = new Map();
 });
 
+// Cleanup expired entries every hour
+setInterval(() => {
+  const oneDayAgo = Date.now() - 24 * 60 * 60 * 1000;
+
+  Object.values(userCooldowns).forEach((map) => {
+    for (const [addr, ts] of map.entries()) {
+      if (ts < oneDayAgo) map.delete(addr);
+    }
+  });
+
+  Object.values(networkClaimTracker).forEach((tracker) => {
+    tracker.claims = tracker.claims.filter(
+      (ts) => Date.now() - ts < tracker.windowMs
+    );
+  });
+}, 60 * 60 * 1000);
+
 export {
   FAUCET_ABI,
   NETWORKS,
