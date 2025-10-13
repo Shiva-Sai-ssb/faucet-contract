@@ -6,6 +6,7 @@ import {
   handleNetworks,
   handleCanClaim,
   handleFaucet,
+  handleHome,
 } from "./faucet.js";
 
 const app = express();
@@ -17,6 +18,7 @@ app.use(express.urlencoded({ extended: true }));
 app.use(cors({ origin: process.env.CORS_ORIGIN || "*" }));
 
 // Routes
+app.get("/", handleHome);
 app.get("/health", handleHealth);
 app.get("/networks", handleNetworks);
 app.post("/can-claim", handleCanClaim);

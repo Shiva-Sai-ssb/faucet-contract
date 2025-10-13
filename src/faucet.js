@@ -17,6 +17,34 @@ import {
   networkClaimTracker,
 } from "./config.js";
 
+// Root Page Handler
+function handleHome(req, res) {
+  res.send(`
+    <div style="
+      font-family: sans-serif;
+      text-align: center;
+      padding: 3rem;
+      color: #222;
+    ">
+      <h1>🌊 Multi-Network Faucet Backend</h1>
+      <p>Server is up and running on port <b>${8081}</b></p>
+      <hr style="margin: 2rem auto; width: 50%;">
+      <p>
+        Available endpoints:
+      </p>
+      <ul style="list-style:none; padding:0;">
+        <li><code>GET /health</code> – Server & network status</li>
+        <li><code>GET /networks</code> – Faucet stats by network</li>
+        <li><code>POST /can-claim</code> – Check if user can claim</li>
+        <li><code>POST /faucet</code> – Request a drip</li>
+      </ul>
+      <p style="margin-top:2rem; font-size:0.9rem; color:#555;">
+        Relayer address: <code>${account.address}</code>
+      </p>
+    </div>
+  `);
+}
+
 // Health Check Handler
 function handleHealth(req, res) {
   res.json({
@@ -253,4 +281,10 @@ async function handleFaucet(req, res) {
   }
 }
 
-export { handleHealth, handleNetworks, handleCanClaim, handleFaucet };
+export {
+  handleHome,
+  handleHealth,
+  handleNetworks,
+  handleCanClaim,
+  handleFaucet,
+};
