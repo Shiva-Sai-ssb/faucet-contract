@@ -11,8 +11,9 @@ import {
 const app = express();
 const PORT = 8081;
 
-// Middleware
+// Middlewares
 app.use(json());
+app.use(express.urlencoded({ extended: true }));
 app.use(cors({ origin: process.env.CORS_ORIGIN || "*" }));
 
 // Routes
