@@ -1,7 +1,7 @@
 {
   "name": "faucet-contract",
   "version": "1.0.0",
-  "description": "Multi-network testnet faucet with contract-based signature verification.",
+  "description": "Multi-network testnet faucet backend with contract-based signature verification.",
   "main": "src/index.js",
   "type": "module",
   "scripts": {
