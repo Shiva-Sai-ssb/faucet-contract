@@ -6,15 +6,16 @@ import {
   recoverMessageAddress,
 } from "viem";
 import {
-  FAUCET_ABI,
-  clients,
+  redis,
   account,
-  canUserClaim,
+  clients,
+  FAUCET_ABI,
   setUserCooldown,
+  canUserClaim,
   getUserCooldownInfo,
   checkAndAddNetworkClaim,
   rollbackNetworkClaim,
-  networkClaimTracker,
+  getNetworkRateLimitStatus,
 } from "./config.js";
 
 // Root Page Handler
@@ -29,14 +30,13 @@ function handleHome(req, res) {
       <h1>🌊 Multi-Network Faucet Backend</h1>
       <p>Server is up and running on port <b>${8081}</b></p>
       <hr style="margin: 2rem auto; width: 50%;">
-      <p>
-        Available endpoints:
-      </p>
+      <p>Available endpoints:</p>
       <ul style="list-style:none; padding:0;">
         <li><code>GET /health</code> – Server & network status</li>
         <li><code>GET /networks</code> – Faucet stats by network</li>
         <li><code>POST /can-claim</code> – Check if user can claim</li>
         <li><code>POST /faucet</code> – Request a drip</li>
+        <li><code>GET /debug</code> – Debug Redis state (Only in dev)</li>
       </ul>
       <p style="margin-top:2rem; font-size:0.9rem; color:#555;">
         Relayer address: <code>${account.address}</code>
@@ -59,30 +59,32 @@ function handleHealth(req, res) {
 }
 
 // Networks Info Handler
-function handleNetworks(req, res) {
-  const networksInfo = {};
+async function handleNetworks(req, res) {
+  try {
+    const networksInfo = {};
 
-  Object.entries(clients).forEach(([chainId, client]) => {
-    const tracker = networkClaimTracker[chainId];
-    const now = Date.now();
+    for (const [chainId, client] of Object.entries(clients)) {
+      const rateLimit = await getNetworkRateLimitStatus(chainId);
 
-    const recentClaims = tracker.claims.filter(
-      (t) => now - t < tracker.windowMs
-    ).length;
+      networksInfo[chainId] = {
+        name: client.name,
+        faucetAddress: client.faucetAddress,
+        remainingClaims: rateLimit.remaining,
+        resetTime: rateLimit.resetTime
+          ? rateLimit.resetTime.toISOString()
+          : null,
+      };
+    }
 
-    networksInfo[chainId] = {
-      name: client.name,
-      faucetAddress: client.faucetAddress,
-      claimsThisHour: recentClaims,
-      remainingClaims: tracker.maxClaims - recentClaims,
-    };
-  });
-
-  res.json({ networks: networksInfo });
+    res.json({ networks: networksInfo });
+  } catch (err) {
+    console.error("Networks info error:", err);
+    res.status(500).json({ error: err.message || String(err) });
+  }
 }
 
 // Can Claim Check Handler
-function handleCanClaim(req, res) {
+async function handleCanClaim(req, res) {
   try {
     const { chainId, user } = req.body;
 
@@ -95,9 +97,11 @@ function handleCanClaim(req, res) {
     if (!user || !isAddress(user))
       return res.status(400).json({ error: "Invalid user address" });
 
-    // Check if user can claim (with lazy cleanup)
-    if (!canUserClaim(chainId, user)) {
-      const cooldownInfo = getUserCooldownInfo(chainId, user);
+    // Check if user can claim
+    const claimable = await canUserClaim(chainId, user);
+
+    if (!claimable) {
+      const cooldownInfo = await getUserCooldownInfo(chainId, user);
       return res.json({
         canClaim: false,
         remainingSeconds: cooldownInfo.remainingSeconds,
@@ -120,7 +124,7 @@ async function handleFaucet(req, res) {
     console.log("User:", user);
     console.log("Nonce:", nonce);
     console.log("Deadline:", deadline);
-    console.log("Signature: ", signature);
+    console.log("Signature:", signature);
     console.log("ChainId:", chainId);
 
     // Validation
@@ -147,7 +151,7 @@ async function handleFaucet(req, res) {
         .json({ error: "Sorry, the deadline has expired. Please try again." });
 
     // Network Rate Limit Check
-    const rateLimitCheck = checkAndAddNetworkClaim(chainId);
+    const rateLimitCheck = await checkAndAddNetworkClaim(chainId);
     if (!rateLimitCheck.allowed) {
       return res.status(429).json({
         error: "Network rate limit reached",
@@ -157,9 +161,9 @@ async function handleFaucet(req, res) {
     }
 
     // User Cooldown Check
-    if (!canUserClaim(chainId, user)) {
-      const cooldownInfo = getUserCooldownInfo(chainId, user);
-      rollbackNetworkClaim(chainId);
+    if (!(await canUserClaim(chainId, user))) {
+      const cooldownInfo = await getUserCooldownInfo(chainId, user);
+      await rollbackNetworkClaim(chainId);
       return res.status(429).json({
         error: "Cooldown active",
         remainingSeconds: cooldownInfo.remainingSeconds,
@@ -190,7 +194,7 @@ async function handleFaucet(req, res) {
         signature,
       });
     } catch (err) {
-      rollbackNetworkClaim(chainId);
+      await rollbackNetworkClaim(chainId);
       console.error("Signature recovery error:", err);
       return res.status(400).json({
         error: "Invalid signature format",
@@ -203,7 +207,7 @@ async function handleFaucet(req, res) {
     console.log("Match:", recovered.toLowerCase() === user.toLowerCase());
 
     if (recovered.toLowerCase() !== user.toLowerCase()) {
-      rollbackNetworkClaim(chainId);
+      await rollbackNetworkClaim(chainId);
       return res.status(400).json({ error: "Invalid signature" });
     }
 
@@ -214,7 +218,7 @@ async function handleFaucet(req, res) {
       args: [user, BigInt(nonce), BigInt(deadline), signature],
     });
 
-    console.log("Encoded Data: ", data);
+    console.log("Encoded Data:", data);
 
     // Gas Estimation
     let gas;
@@ -227,7 +231,7 @@ async function handleFaucet(req, res) {
 
       gas = BigInt(Math.floor(Number(estimatedGas) * 1.2));
     } catch (err) {
-      rollbackNetworkClaim(chainId);
+      await rollbackNetworkClaim(chainId);
 
       return res.status(400).json({
         error: "Transaction would fail",
@@ -235,7 +239,7 @@ async function handleFaucet(req, res) {
       });
     }
 
-    console.log("Estimated Gas: ", gas);
+    console.log("Estimated Gas:", gas);
 
     // Send Transaction
     let txHash;
@@ -246,7 +250,7 @@ async function handleFaucet(req, res) {
         gas,
       });
     } catch (err) {
-      rollbackNetworkClaim(chainId);
+      await rollbackNetworkClaim(chainId);
 
       return res.status(500).json({
         error: "Transaction failed",
@@ -256,7 +260,7 @@ async function handleFaucet(req, res) {
 
     // Update user cooldown (only after successful transaction)
     const now = Date.now();
-    setUserCooldown(chainId, user, now);
+    await setUserCooldown(chainId, user, now);
 
     console.log(
       `Drip Successful!\nNetwork: ${name} (Chain ID: ${chainId})\nRecipient: ${user}\nTransaction Hash: ${txHash}`
@@ -281,10 +285,34 @@ async function handleFaucet(req, res) {
   }
 }
 
+// Debug endpoint to inspect Redis state - Only in dev
+async function handleDebug(req, res) {
+  try {
+    const keys = await redis.keys("*");
+    const data = {};
+
+    for (const key of keys) {
+      if (key.startsWith("network:claims:")) {
+        data[key] = await redis.lrange(key, 0, -1);
+      } else {
+        data[key] = await redis.get(key);
+      }
+    }
+
+    res.json({ redis: data });
+  } catch (err) {
+    res.status(500).json({
+      error: "Failed to fetch Redis state",
+      details: err.message || String(err),
+    });
+  }
+}
+
 export {
   handleHome,
   handleHealth,
   handleNetworks,
   handleCanClaim,
   handleFaucet,
+  handleDebug,
 };
