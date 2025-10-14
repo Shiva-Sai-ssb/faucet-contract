@@ -181,10 +181,12 @@ async function getNetworkRateLimitStatus(chainId) {
   const recentClaims = timestamps.filter((t) => t > cutoff);
   const remaining = Math.max(0, MAX_CLAIMS - recentClaims.length);
 
-  let resetTime = null;
-  if (remaining === 0 && recentClaims.length > 0) {
+  let resetTime;
+  if (recentClaims.length > 0) {
     const oldestInWindow = Math.min(...recentClaims);
     resetTime = new Date(oldestInWindow + WINDOW_MS);
+  } else {
+    resetTime = new Date(now + WINDOW_MS);
   }
 
   return {
