@@ -47,6 +47,7 @@ function handleHome(req, res) {
 
 // Health Check Handler
 function handleHealth(req, res) {
+  const timestampUTC = new Date();
   res.json({
     status: "ok",
     networks: Object.keys(clients).map((id) => ({
@@ -54,7 +55,10 @@ function handleHealth(req, res) {
       name: clients[id].name,
     })),
     relayerAddress: account.address,
-    timestamp: new Date().toISOString(),
+    timestamp: timestampUTC.toISOString(),
+    timestampLocal: timestampUTC.toLocaleString("en-US", {
+      timeZoneName: "short",
+    }),
   });
 }
 
@@ -72,6 +76,11 @@ async function handleNetworks(req, res) {
         remainingClaims: rateLimit.remaining,
         resetTime: rateLimit.resetTime
           ? rateLimit.resetTime.toISOString()
+          : null,
+        resetTimeLocal: rateLimit.resetTime
+          ? rateLimit.resetTime.toLocaleString("en-US", {
+              timeZoneName: "short",
+            })
           : null,
       };
     }
@@ -102,10 +111,17 @@ async function handleCanClaim(req, res) {
 
     if (!claimable) {
       const cooldownInfo = await getUserCooldownInfo(chainId, user);
+
+      const utc = new Date(cooldownInfo.expiresAt).toISOString();
+      const local = new Date(cooldownInfo.expiresAt).toLocaleString("en-US", {
+        timeZoneName: "short",
+      });
+
       return res.json({
         canClaim: false,
         remainingSeconds: cooldownInfo.remainingSeconds,
-        nextClaimTime: new Date(cooldownInfo.expiresAt).toISOString(),
+        nextClaimTime: utc,
+        nextClaimTimeLocal: local,
       });
     }
 
@@ -274,6 +290,10 @@ async function handleFaucet(req, res) {
       faucetAddress,
       user,
       nextClaimTime: new Date(now + 24 * 60 * 60 * 1000).toISOString(),
+      nextClaimTimeLocal: new Date(now + 24 * 60 * 60 * 1000).toLocaleString(
+        "en-US",
+        { timeZoneName: "short" }
+      ),
       networkRateLimitRemaining: rateLimitCheck.remaining,
     });
   } catch (err) {
