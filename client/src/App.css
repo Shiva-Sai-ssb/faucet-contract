@@ -1,23 +1,8 @@
-#root {
-  max-width: 1280px;
-  margin: 0 auto;
-  padding: 2rem;
-  text-align: center;
-}
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
-.logo {
-  height: 6em;
-  padding: 1.5em;
-  will-change: filter;
-  transition: filter 300ms;
-}
-.logo:hover {
-  filter: drop-shadow(0 0 2em #646cffaa);
-}
-.logo.react:hover {
-  filter: drop-shadow(0 0 2em #61dafbaa);
-}
-
+/* Additional animations and utilities */
 @keyframes logo-spin {
   from {
     transform: rotate(0deg);
@@ -27,16 +12,37 @@
   }
 }
 
-@media (prefers-reduced-motion: no-preference) {
-  a:nth-of-type(2) .logo {
-    animation: logo-spin infinite 20s linear;
-  }
+.animate-spin-slow { 
+  animation: spin 3s linear infinite; 
 }
 
-.card {
-  padding: 2em;
+/* Hero section styles */
+.hero-section {
+  position: relative;
+  overflow: hidden;
 }
 
-.read-the-docs {
-  color: #888;
+.hero-section::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(135deg, 
+    hsl(var(--primary) / 0.1) 0%, 
+    transparent 50%, 
+    hsl(var(--accent) / 0.1) 100%);
+  pointer-events: none;
+}
+
+/* Feature cards */
+.feature-card {
+  transition: var(--transition-smooth);
+  border: 1px solid hsl(var(--border) / 0.5);
+}
+
+.feature-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-card);
 }
