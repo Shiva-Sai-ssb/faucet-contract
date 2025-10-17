@@ -25,6 +25,8 @@ import {
   useChainId,
   useSwitchChain,
   useReadContract,
+  useWatchContractEvent,
+  useWatchBlocks,
 } from "wagmi";
 import { getContractConfig, FAUCET_ABI } from "@/config/contract";
 import { useToast } from "@/hooks/use-toast";
@@ -174,9 +176,112 @@ export function TestnetFaucet() {
     return () => clearInterval(interval);
   }, [address, chainId, isTestnet]);
 
-  const { data: balance } = useBalance({ address });
+  const { data: balance, refetch: refetchBalance } = useBalance({ address });
   const balanceInEth = balance ? parseFloat(formatEther(balance.value)) : 0;
   const hasMinimumBalance = balanceInEth > MIN_BALANCE_THRESHOLD;
+
+  // Real-time event listening for Drip events
+  useWatchContractEvent({
+    address: networkConfig?.faucetAddress,
+    abi: FAUCET_ABI,
+    eventName: 'Drip',
+    onLogs(logs) {
+      console.log('🔥 Real-time Drip event detected:', logs);
+      
+      // Check if any of the events involve the current user
+      const userEvents = logs.filter(log => {
+        const { user } = log.args as { user: string };
+        return user?.toLowerCase() === address?.toLowerCase();
+      });
+      
+      if (userEvents.length > 0) {
+        console.log('💧 User received tokens, refreshing balance...');
+        // Refresh balance immediately
+        refetchBalance();
+        
+        // Update cooldown info
+        setCooldownInfo({ canClaim: false });
+        
+        // Show toast notification
+        const event = userEvents[0];
+        const { amount } = event.args as { amount: bigint; nonce: bigint };
+        
+        toast({
+          title: '✨ Tokens Received!',
+          description: (
+            <div className="space-y-1">
+              <div>You received {formatEther(amount)} {networkConfig?.currency}</div>
+              <div className="text-xs text-muted-foreground">Event detected in real-time via WebSocket</div>
+            </div>
+          ),
+        });
+      } else {
+        // Someone else got tokens, just log it
+        console.log('👀 Another user received tokens from faucet');
+      }
+    },
+    enabled: !!networkConfig && !!address,
+  });
+
+  // Also listen for Deposit events (when faucet is funded)
+  useWatchContractEvent({
+    address: networkConfig?.faucetAddress,
+    abi: FAUCET_ABI,
+    eventName: 'Deposit',
+    onLogs(logs) {
+      console.log('💰 Faucet deposit detected:', logs);
+      // Could show a notification that more funds are available
+      logs.forEach(log => {
+        const { amount } = log.args as { amount: bigint };
+        console.log(`Faucet received ${formatEther(amount)} ${networkConfig?.currency}`);
+      });
+    },
+    enabled: !!networkConfig,
+  });
+
+  // Real-time balance monitoring - watch for new blocks and fetch fresh balance
+  const [previousBalance, setPreviousBalance] = useState<bigint | null>(null);
+  
+  useWatchBlocks({
+    onBlock: async (block) => {
+      if (address) {
+        console.log('🔴 New block detected:', block.number, 'checking balance...');
+        
+        try {
+          // Force refresh balance to get latest data
+          const freshBalance = await refetchBalance();
+          
+          if (freshBalance.data && previousBalance !== null) {
+            const currentBalance = freshBalance.data.value;
+            
+            if (previousBalance !== currentBalance) {
+              const diff = currentBalance - previousBalance;
+              const diffEth = formatEther(diff);
+              
+              console.log('⚡ Balance change detected:', {
+                previous: formatEther(previousBalance),
+                current: formatEther(currentBalance),
+                difference: diffEth,
+                block: block.number.toString()
+              });
+            }
+            
+            // Always update previous balance
+            setPreviousBalance(currentBalance);
+          } else if (freshBalance.data && previousBalance === null) {
+            // Initialize previous balance
+            setPreviousBalance(freshBalance.data.value);
+            console.log('🔄 Initialized balance tracking:', formatEther(freshBalance.data.value));
+          }
+        } catch (error) {
+          console.error('❌ Error fetching balance:', error);
+        }
+      }
+    },
+    enabled: !!address && !!networkConfig,
+    poll: true,
+    pollingInterval: 3000, // Check every 3 seconds to avoid rate limiting
+  });
 
   const { data: nonce } = useReadContract({
     address: networkConfig?.faucetAddress,
