@@ -2,6 +2,11 @@
 
 A full-stack decentralized application (dApp) that provides a gasless testnet ETH distribution system across multiple networks. Users can claim testnet ETH without having any initial gas fees, making it easier for developers to start building on various test networks.
 
+## 🌐 Live Demo
+
+- **Frontend**: [https://faucet-contract.vercel.app/](https://faucet-contract.vercel.app/)
+- **Backend**: [https://faucet-contract-server.onrender.com/](https://faucet-contract-server.onrender.com/)
+
 ## 📚 Project Overview
 
 This project consists of three main components:
@@ -10,7 +15,6 @@ This project consists of three main components:
 
    - Manages faucet funds and claim logic
    - Implements cooldown periods and claim limits
-   - Supports multiple test networks
 
 2. **Frontend** (`/client`)
 
