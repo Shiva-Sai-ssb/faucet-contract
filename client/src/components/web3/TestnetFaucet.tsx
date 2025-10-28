@@ -29,7 +29,7 @@ import {
   useWatchBlocks,
 } from "wagmi";
 import { getContractConfig, FAUCET_ABI } from "@/config/contract";
-import { useToast } from "@/hooks/use-toast";
+import { toast } from "sonner";
 import { formatEther, encodePacked, keccak256 } from "viem";
 import { signMessage } from "wagmi/actions";
 import { wagmiConfig } from "@/config/wagmi";
@@ -89,23 +89,6 @@ export function TestnetFaucet() {
   const { address, isConnected } = useAccount();
   const chainId = useChainId();
   const { switchChain } = useSwitchChain();
-  const { toast } = useToast();
-
-  useEffect(() => {
-    if (isConnected && address && chainId) {
-      const faucetAddress = NETWORK_CONFIGS[chainId]?.faucetAddress;
-      const networkName = NETWORK_CONFIGS[chainId]?.name || "Unknown Network";
-  
-      console.log("====================================");
-      console.log("🔗 Connected Address:", address);
-      console.log("🌐 Chain ID:", chainId);
-      console.log("🧱 Network:", networkName);
-      console.log("💧 Faucet Contract Address:", faucetAddress || "N/A");
-      console.log("====================================");
-    } else {
-      console.log("❌ Wallet not connected or chain not supported");
-    }
-  }, [address, chainId, isConnected]);
 
   const [claimHistory, setClaimHistory] = useState<ClaimHistory[]>([]);
   const [isClaiming, setIsClaiming] = useState(false);
@@ -143,17 +126,15 @@ export function TestnetFaucet() {
         setNetworkStatuses(data.networks);
       } catch (error) {
         console.error("Network fetch error:", error);
-        toast({
-          title: "Network Error",
+        toast.error("Network Error", {
           description: "Unable to fetch network data.",
-          variant: "destructive",
         });
       }
     };
     fetchNetworkStatuses();
     const interval = setInterval(fetchNetworkStatuses, 30000);
     return () => clearInterval(interval);
-  }, [toast]);
+  }, []);
 
   useEffect(() => {
     const checkCanClaim = async () => {
@@ -186,8 +167,6 @@ export function TestnetFaucet() {
     abi: FAUCET_ABI,
     eventName: 'Drip',
     onLogs(logs) {
-      console.log('🔥 Real-time Drip event detected:', logs);
-      
       // Check if any of the events involve the current user
       const userEvents = logs.filter(log => {
         const { user } = log.args as { user: string };
@@ -195,7 +174,6 @@ export function TestnetFaucet() {
       });
       
       if (userEvents.length > 0) {
-        console.log('💧 User received tokens, refreshing balance...');
         // Refresh balance immediately
         refetchBalance();
         
@@ -206,8 +184,7 @@ export function TestnetFaucet() {
         const event = userEvents[0];
         const { amount } = event.args as { amount: bigint; nonce: bigint };
         
-        toast({
-          title: '✨ Tokens Received!',
+        toast.success('✨ Tokens Received!', {
           description: (
             <div className="space-y-1">
               <div>You received {formatEther(amount)} {networkConfig?.currency}</div>
@@ -215,26 +192,16 @@ export function TestnetFaucet() {
             </div>
           ),
         });
-      } else {
-        // Someone else got tokens, just log it
-        console.log('👀 Another user received tokens from faucet');
       }
     },
     enabled: !!networkConfig && !!address,
   });
 
-  // Also listen for Deposit events (when faucet is funded)
   useWatchContractEvent({
     address: networkConfig?.faucetAddress,
     abi: FAUCET_ABI,
     eventName: 'Deposit',
-    onLogs(logs) {
-      console.log('💰 Faucet deposit detected:', logs);
-      // Could show a notification that more funds are available
-      logs.forEach(log => {
-        const { amount } = log.args as { amount: bigint };
-        console.log(`Faucet received ${formatEther(amount)} ${networkConfig?.currency}`);
-      });
+    onLogs() {
     },
     enabled: !!networkConfig,
   });
@@ -243,35 +210,21 @@ export function TestnetFaucet() {
   const [previousBalance, setPreviousBalance] = useState<bigint | null>(null);
   
   useWatchBlocks({
-    onBlock: async (block) => {
+    onBlock: async () => {
       if (address) {
-        console.log('🔴 New block detected:', block.number, 'checking balance...');
-        
         try {
-          // Force refresh balance to get latest data
           const freshBalance = await refetchBalance();
           
           if (freshBalance.data && previousBalance !== null) {
             const currentBalance = freshBalance.data.value;
             
             if (previousBalance !== currentBalance) {
-              const diff = currentBalance - previousBalance;
-              const diffEth = formatEther(diff);
-              
-              console.log('⚡ Balance change detected:', {
-                previous: formatEther(previousBalance),
-                current: formatEther(currentBalance),
-                difference: diffEth,
-                block: block.number.toString()
-              });
+              // Do nothing
             }
             
-            // Always update previous balance
             setPreviousBalance(currentBalance);
           } else if (freshBalance.data && previousBalance === null) {
-            // Initialize previous balance
             setPreviousBalance(freshBalance.data.value);
-            console.log('🔄 Initialized balance tracking:', formatEther(freshBalance.data.value));
           }
         } catch (error) {
           console.error('❌ Error fetching balance:', error);
@@ -280,7 +233,7 @@ export function TestnetFaucet() {
     },
     enabled: !!address && !!networkConfig,
     poll: true,
-    pollingInterval: 3000, // Check every 3 seconds to avoid rate limiting
+    pollingInterval: 3000,
   });
 
   const { data: nonce } = useReadContract({
@@ -333,69 +286,51 @@ export function TestnetFaucet() {
       setCooldownInfo(null);
     } catch (error) {
       console.error("Failed to switch network:", error);
-      toast({
-        title: "Network Switch Failed",
+      toast.error("Network Switch Failed", {
         description: "Please switch networks manually in your wallet",
-        variant: "destructive",
       });
     }
   };
 
   const handleClaimFaucet = async () => {
     if (!isConnected || !address) {
-      toast({
-        title: "Wallet not connected",
+      toast.error("Wallet not connected", {
         description: "Please connect your wallet first",
-        variant: "destructive",
       });
       return;
     }
     if (!isTestnet || !networkConfig) {
-      toast({
-        title: "Wrong Network",
+      toast.error("Wrong Network", {
         description: "Please switch to a supported testnet",
-        variant: "destructive",
       });
       return;
     }
     if (hasMinimumBalance) {
-      toast({
-        title: "Sufficient Balance",
+      toast.error("Sufficient Balance", {
         description: `You have ${balanceInEth.toFixed(4)} ${
           networkConfig.currency
         }. Faucet is only for wallets with less than ${MIN_BALANCE_THRESHOLD} ${
           networkConfig.currency
         }.`,
-        variant: "destructive",
       });
       return;
     }
     if (!canClaim()) {
-      toast({
-        title: "Claim Not Available",
+      toast.error("Claim Not Available", {
         description: `You can only claim once every 24 hours. Next claim available in ${getTimeUntilNextClaim()}.`,
-        variant: "destructive",
       });
       return;
     }
     if (nonce === undefined) {
-      toast({
-        title: "Nonce unavailable",
+      toast.error("Nonce unavailable", {
         description: "Please try again in a moment.",
-        variant: "destructive",
       });
       return;
     }
 
     setIsClaiming(true);
     try {
-      const deadline = Math.floor(Date.now() / 1000) + 300; // 5 min
-
-      console.log("Address:", address);
-      console.log("Nonce:", nonce?.toString());
-      console.log("Deadline:", deadline);
-      console.log("ChainId:", chainId);
-      console.log("Faucet Address:", networkConfig!.faucetAddress);
+      const deadline = Math.floor(Date.now() / 1000) + 300;
 
       const messageHash = keccak256(
         encodePacked(
@@ -410,15 +345,11 @@ export function TestnetFaucet() {
         )
       );
 
-      console.log("Message Hash:", messageHash);
-
       // Sign the raw hash
       const signature = await signMessage(wagmiConfig, {
         message: { raw: messageHash },
         account: address,
       });
-
-      console.log("Signature:", signature);
 
       // Send to relayer
       const resp = await fetch(`${API_URL}/faucet`, {
@@ -448,8 +379,7 @@ export function TestnetFaucet() {
       saveClaimHistory([newClaim, ...claimHistory].slice(0, 10));
       setCooldownInfo({ canClaim: false });
 
-      toast({
-        title: "🎉 Faucet Claim Successful!",
+      toast.success("🎉 Faucet Claim Successful!", {
         description: (
           <div className="space-y-2">
             <div>
@@ -471,10 +401,8 @@ export function TestnetFaucet() {
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : "Claim failed";
 
-      toast({
-        title: "Transaction Failed",
+      toast.error("Transaction Failed", {
         description: message,
-        variant: "destructive",
       });
 
       console.error("Claim error:", error);
