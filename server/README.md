@@ -67,19 +67,11 @@ UPSTASH_REDIS_REST_URL=        # Upstash Redis instance URL
 UPSTASH_REDIS_REST_TOKEN=      # Upstash Redis authentication token
 ```
 
-> **Important Security Notes:**
->
-> - Never commit your `.env` file to version control
-> - Keep your `RELAYER_PRIVATE_KEY` secure and never share it
-> - Make sure the relayer account has sufficient funds for gas fees
-
-````
-
 ### 4. Run the Server
 
 ```bash
 pnpm start
-````
+```
 
 ---
 
