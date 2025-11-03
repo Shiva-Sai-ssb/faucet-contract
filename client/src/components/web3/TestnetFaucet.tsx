@@ -126,9 +126,6 @@ export function TestnetFaucet() {
         setNetworkStatuses(data.networks);
       } catch (error) {
         console.error("Network fetch error:", error);
-        toast.error("Network Error", {
-          description: "Unable to fetch network data.",
-        });
       }
     };
     fetchNetworkStatuses();
@@ -161,37 +158,23 @@ export function TestnetFaucet() {
   const balanceInEth = balance ? parseFloat(formatEther(balance.value)) : 0;
   const hasMinimumBalance = balanceInEth > MIN_BALANCE_THRESHOLD;
 
-  // Real-time event listening for Drip events
   useWatchContractEvent({
     address: networkConfig?.faucetAddress,
     abi: FAUCET_ABI,
     eventName: 'Drip',
     onLogs(logs) {
-      // Check if any of the events involve the current user
       const userEvents = logs.filter(log => {
         const { user } = log.args as { user: string };
         return user?.toLowerCase() === address?.toLowerCase();
       });
       
       if (userEvents.length > 0) {
-        // Refresh balance immediately
         refetchBalance();
+        if (networkConfig?.faucetAddress) {
+          refetchFaucetBalance();
+        }
         
-        // Update cooldown info
         setCooldownInfo({ canClaim: false });
-        
-        // Show toast notification
-        const event = userEvents[0];
-        const { amount } = event.args as { amount: bigint; nonce: bigint };
-        
-        toast.success('✨ Tokens Received!', {
-          description: (
-            <div className="space-y-1">
-              <div>You received {formatEther(amount)} {networkConfig?.currency}</div>
-              <div className="text-xs text-muted-foreground">Event detected in real-time via WebSocket</div>
-            </div>
-          ),
-        });
       }
     },
     enabled: !!networkConfig && !!address,
@@ -202,11 +185,13 @@ export function TestnetFaucet() {
     abi: FAUCET_ABI,
     eventName: 'Deposit',
     onLogs() {
+      if (networkConfig?.faucetAddress) {
+        refetchFaucetBalance();
+      }
     },
-    enabled: !!networkConfig,
+    enabled: !!networkConfig && !!networkConfig.faucetAddress,
   });
 
-  // Real-time balance monitoring - watch for new blocks and fetch fresh balance
   const [previousBalance, setPreviousBalance] = useState<bigint | null>(null);
   
   useWatchBlocks({
@@ -217,10 +202,6 @@ export function TestnetFaucet() {
           
           if (freshBalance.data && previousBalance !== null) {
             const currentBalance = freshBalance.data.value;
-            
-            if (previousBalance !== currentBalance) {
-              // Do nothing
-            }
             
             setPreviousBalance(currentBalance);
           } else if (freshBalance.data && previousBalance === null) {
@@ -251,6 +232,13 @@ export function TestnetFaucet() {
     args: address ? [address] : undefined,
     query: { enabled: !!networkConfig && !!address },
   });
+
+  const { data: faucetBalanceData, refetch: refetchFaucetBalance } = useBalance({
+    address: networkConfig?.faucetAddress as `0x${string}` | undefined,
+    query: { enabled: !!networkConfig && !!networkConfig.faucetAddress },
+  });
+  const faucetBalance = faucetBalanceData?.value;
+  const isFaucetEmpty = faucetBalance === 0n;
 
   const dripAmount = networkConfig?.dripAmount;
 
@@ -441,19 +429,36 @@ export function TestnetFaucet() {
     <div className="space-y-6">
       <Card className="gradient-card border-border/50 shadow-card">
         <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-foreground">
-            <Droplets className="w-5 h-5 text-primary" />
-            {networkConfig
-              ? `${networkConfig.name} Faucet`
-              : "Multi-Network Testnet Faucet"}
-          </CardTitle>
-          <CardDescription>
-            {networkConfig
-              ? `Claim ${dripAmount ? formatEther(dripAmount) : "?"} ${
-                  networkConfig.currency
-                } for testing (once every 24 hours)`
-              : "Switch to a supported testnet to claim tokens"}
-          </CardDescription>
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex-1">
+              <CardTitle className="flex items-center gap-2 text-foreground">
+                <Droplets className="w-5 h-5 text-primary" />
+                {networkConfig
+                  ? `${networkConfig.name} Faucet`
+                  : "Multi-Network Testnet Faucet"}
+              </CardTitle>
+              <CardDescription>
+                {networkConfig
+                  ? `Claim ${dripAmount ? formatEther(dripAmount) : "?"} ${
+                      networkConfig.currency
+                    } for testing (once every 24 hours)`
+                  : "Switch to a supported testnet to claim tokens"}
+              </CardDescription>
+            </div>
+            {networkConfig && faucetBalance !== undefined && (
+              <div className="text-right">
+                <div className="text-xs text-muted-foreground mb-1">
+                  Faucet Balance
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <Droplets className="w-4 h-4 text-primary" />
+                  <span className="font-semibold text-foreground">
+                    {formatEther(faucetBalance)} {networkConfig.currency}
+                  </span>
+                </div>
+              </div>
+            )}
+          </div>
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
@@ -543,7 +548,7 @@ export function TestnetFaucet() {
 
             <Button
               onClick={handleClaimFaucet}
-              disabled={!canClaimNow || isClaiming}
+              disabled={!canClaimNow || isClaiming || isFaucetEmpty}
               className="w-full bg-[#0847f7] text-white hover:bg-[#063bbf] transition-smooth shadow-button"
               size="lg"
             >
