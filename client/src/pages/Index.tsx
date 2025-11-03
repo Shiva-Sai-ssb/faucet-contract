@@ -165,7 +165,7 @@ const Index = () => {
               to:
             </p>
             <code className="text-xs bg-muted px-3 py-1 rounded-md text-primary font-mono">
-              0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb
+            0xb9f30b9772e5aa6819204071d94ecefcc16f638d
             </code>
           </div>
         </div>
