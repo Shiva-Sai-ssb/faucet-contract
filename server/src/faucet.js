@@ -248,10 +248,13 @@ async function handleFaucet(req, res) {
       gas = BigInt(Math.floor(Number(estimatedGas) * 1.2));
     } catch (err) {
       await rollbackNetworkClaim(chainId);
+      console.error(`Gas estimation failed on ${name} (chainId: ${chainId}):`, err);
 
       return res.status(400).json({
         error: "Transaction would fail",
         details: err.message || String(err),
+        network: name,
+        chainId,
       });
     }
 
@@ -267,10 +270,13 @@ async function handleFaucet(req, res) {
       });
     } catch (err) {
       await rollbackNetworkClaim(chainId);
+      console.error(`Transaction send failed on ${name} (chainId: ${chainId}):`, err);
 
       return res.status(500).json({
         error: "Transaction failed",
         details: err.message || String(err),
+        network: name,
+        chainId,
       });
     }
 
